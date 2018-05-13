@@ -44,3 +44,13 @@ kubectl config --kubeconfig=/Users/xydinesh/.kube/config set-cluster development
 ```
 kubectl config --kubeconfig=/Users/xydinesh/.kube/config set-credentials admin-user --user=admin-user --token=$token
 ```
+
+## Set dev-default context
+```
+kubectl config --kubeconfig=/Users/xydinesh/.kube/config set-context dev-default --cluster=development --user=admin-user --namespace=default
+```
+
+## Set dev-mare context
+```
+kubectl config --kubeconfig=/Users/xydinesh/.kube/config set-context dev-mare --cluster=development --user=admin-user --namespace=mare
+```
