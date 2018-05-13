@@ -1,8 +1,8 @@
 # kubectl commandline
 
-[Overview](https://kubernetes.io/docs/reference/kubectl/overview/) from kubernetes website.
-[Install and Setup kubctl](https://kubernetes.io/docs/tasks/tools/install-kubectl/)
-[Organizing cluster access with kubeconfig](https://kubernetes.io/docs/concepts/configuration/organize-cluster-access-kubeconfig/)
+* [Overview](https://kubernetes.io/docs/reference/kubectl/overview/) from kubernetes website.
+* [Install and Setup kubctl](https://kubernetes.io/docs/tasks/tools/install-kubectl/)
+* [Organizing cluster access with kubeconfig](https://kubernetes.io/docs/concepts/configuration/organize-cluster-access-kubeconfig/)
 
 In this step we use service account we created in dashboard section, admin-user
 
@@ -53,4 +53,15 @@ kubectl config --kubeconfig=/Users/xydinesh/.kube/config set-context dev-default
 ## Set dev-mare context
 ```
 kubectl config --kubeconfig=/Users/xydinesh/.kube/config set-context dev-mare --cluster=development --user=admin-user --namespace=mare
+```
+
+## Test dev-default context
+
+```
+$export KUBECONFIG=''
+$kubectl config use-context dev-default
+$kubectl get nodes
+NAME              STATUS    ROLES     AGE       VERSION
+ip-10-110-2-125   Ready     <none>    3d        v1.9.1
+ip-10-110-2-141   Ready     master    3d        v1.9.1
 ```
