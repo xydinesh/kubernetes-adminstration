@@ -179,10 +179,11 @@ def setup_encryption():
     mytemplate = Template(
         filename='encryption/encryption-config.mako',
         module_directory='/tmp/mako_modules')
-        # private ip of etcd cluster
     key = str(binascii.b2a_base64(os.urandom(20)), 'utf-8')
     with open('encryption/encryption-config.yaml', 'w') as f:
         f.write(mytemplate.render(encryption_key=key))
+    for i in range(0, 3):
+        local('gcloud compute scp encryption/encryption-config.yaml controller-{0}:~/'.format(i))
 
 def step_01():
     init_env()
@@ -217,3 +218,6 @@ def step_04():
     create_scheduler_config()
     create_admin_config()
     copy_config()
+
+def step_05():
+    setup_encryption()
