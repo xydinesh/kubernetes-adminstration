@@ -123,12 +123,63 @@ def copy_certs():
         local('gcloud compute scp ca/ca.pem kubelet/worker-{0}-key.pem kubelet/worker-{0}.pem worker-{0}:~/'.format(i))
         local('gcloud compute scp ca/ca.pem ca/ca-key.pem api_server/kubernetes-key.pem api_server/kubernetes.pem sa/service-account-key.pem sa/service-account.pem controller-{0}:~/'.format(i))
 
+def create_kubelet_config():
+    public_ip = local("""gcloud compute addresses describe kubernetes-the-hard-way """
+                      """--region us-west1 --format 'value(address)'""", capture=True)
+    for i in range(0, 3):
+        with lcd('kubelet'):
+            local("""kubectl config set-cluster kubernetes-the-hard-way --certificate-authority=../ca/ca.pem --embed-certs=true """
+            """--server=https://{0}:6443 --kubeconfig=worker-{1}.kubeconfig""".format(public_ip, i))
+            local("""kubectl config set-credentials system:node:worker-{0} --client-certificate=worker-{0}.pem --client-key=worker-{0}-key.pem """
+            """--embed-certs=true --kubeconfig=worker-{0}.kubeconfig""".format(i))
+            local("""kubectl config set-context default --cluster=kubernetes-the-hard-way --user=system:node:worker-{0} """
+             """--kubeconfig=worker-{0}.kubeconfig""".format(i))
+            local("""kubectl config use-context default --kubeconfig=worker-{0}.kubeconfig""".format(i))
+
+def create_kube_proxy_config():
+    public_ip = local("""gcloud compute addresses describe kubernetes-the-hard-way """
+                      """--region us-west1 --format 'value(address)'""", capture=True)
+    create_config(name='kube-proxy', dir_name='kube_proxy', server_ip=public_ip)
+
+def create_controller_manager_config():
+    public_ip = local("""gcloud compute addresses describe kubernetes-the-hard-way """
+                      """--region us-west1 --format 'value(address)'""", capture=True)
+    create_config(name='kube-controller-manager',
+                  dir_name='control_manager', server_ip=public_ip)
+
+def create_scheduler_config():
+    public_ip = local("""gcloud compute addresses describe kubernetes-the-hard-way """
+                      """--region us-west1 --format 'value(address)'""", capture=True)
+    create_config(name='kube-scheduler',
+                  dir_name='scheduler', server_ip=public_ip)
+
+def create_admin_config():
+    server_ip = "127.0.0.1"
+    create_config(name='admin', dir_name='admin', server_ip=server_ip)
+
+def copy_config():
+    for i in range(0, 3):
+        local('gcloud compute scp kubelet/worker-{0}.kubeconfig kube_proxy/kube-proxy.kubeconfig worker-{0}:~/'.format(i))
+        local('gcloud compute scp admin/admin.kubeconfig control_manager/kube-controller-manager.kubeconfig scheduler/kube-scheduler.kubeconfig controller-{0}:~/'.format(i))
+
+def create_config(name, dir_name, server_ip):
+    
+    with lcd(dir_name):
+        local("""kubectl config set-cluster kubernetes-the-hard-way --certificate-authority=../ca/ca.pem --embed-certs=true """
+            """--server=https://{0}:6443 --kubeconfig={1}.kubeconfig""".format(server_ip, name))
+        local("""kubectl config set-credentials system:node:{0} --client-certificate={0}.pem --client-key={0}-key.pem """
+            """--embed-certs=true --kubeconfig={0}.kubeconfig""".format(name))
+        local("""kubectl config set-context default --cluster=kubernetes-the-hard-way --user=system:node:{0} """
+            """--kubeconfig={0}.kubeconfig""".format(name))
+        local("""kubectl config use-context default --kubeconfig={0}.kubeconfig""".format(name))
+
 def step_01():
     init_env()
     cfssl()
     kubectl()
 
 def step_02():
+    # setting up networking and firewall rules
     networking()
     firewall_rules()
     public_ip()
@@ -136,6 +187,7 @@ def step_02():
     create_workers()
 
 def step_03():
+    # generate client certificates and distribute them
     generate_ca()
     generate_admin_cert()
     generate_kubelet_cert()
@@ -145,3 +197,12 @@ def step_03():
     generate_control_manager_cert()
     generate_service_account_cert()
     copy_certs()
+
+def step_04():
+    # generate kubeconfig and distributes them
+    create_kube_proxy_config()
+    create_kubelet_config()
+    create_controller_manager_config()
+    create_scheduler_config()
+    create_admin_config()
+    copy_config()
