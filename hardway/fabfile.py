@@ -118,6 +118,10 @@ def generate_service_account_cert():
         local("""cfssl gencert -ca=../ca/ca.pem -ca-key=../ca/ca-key.pem -config=../ca/ca-config.json """
             """-profile=kubernetes service-account-csr.json | cfssljson -bare service-account""")
 
+def copy_certs():
+    for i in range(0, 3):
+        local('gcloud compute scp ca/ca.pem kubelet/worker-{0}-key.pem kubelet/worker-{0}.pem worker-{0}:~/'.format(i))
+        local('gcloud compute scp ca/ca.pem ca/ca-key.pem api_server/kubernetes-key.pem api_server/kubernetes.pem sa/service-account-key.pem sa/service-account.pem controller-{0}:~/'.format(i))
 
 def step_01():
     init_env()
@@ -140,3 +144,4 @@ def step_03():
     generate_api_server_cert()
     generate_control_manager_cert()
     generate_service_account_cert()
+    copy_certs()
