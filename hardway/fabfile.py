@@ -163,7 +163,6 @@ def copy_config():
         local('gcloud compute scp admin/admin.kubeconfig control_manager/kube-controller-manager.kubeconfig scheduler/kube-scheduler.kubeconfig controller-{0}:~/'.format(i))
 
 def create_config(name, dir_name, server_ip):
-    
     with lcd(dir_name):
         local("""kubectl config set-cluster kubernetes-the-hard-way --certificate-authority=../ca/ca.pem --embed-certs=true """
             """--server=https://{0}:6443 --kubeconfig={1}.kubeconfig""".format(server_ip, name))
@@ -172,6 +171,18 @@ def create_config(name, dir_name, server_ip):
         local("""kubectl config set-context default --cluster=kubernetes-the-hard-way --user=system:node:{0} """
             """--kubeconfig={0}.kubeconfig""".format(name))
         local("""kubectl config use-context default --kubeconfig={0}.kubeconfig""".format(name))
+
+def setup_encryption():
+    from mako.template import Template
+    import os
+    import binascii
+    mytemplate = Template(
+        filename='encryption/encryption-config.mako',
+        module_directory='/tmp/mako_modules')
+        # private ip of etcd cluster
+    key = str(binascii.b2a_base64(os.urandom(20)), 'utf-8')
+    with open('encryption/encryption-config.yaml', 'w') as f:
+        f.write(mytemplate.render(encryption_key=key))
 
 def step_01():
     init_env()
