@@ -1,4 +1,5 @@
 from fabric.api import local, lcd
+from mako.template import Template
 
 def init_env(region='us-west1', zone='us-west1-c', os='osx'):
     local('gcloud config set compute/region us-west1')
@@ -173,7 +174,6 @@ def create_config(name, dir_name, server_ip):
         local("""kubectl config use-context default --kubeconfig={0}.kubeconfig""".format(name))
 
 def setup_encryption():
-    from mako.template import Template
     import os
     import binascii
     mytemplate = Template(
@@ -184,6 +184,23 @@ def setup_encryption():
         f.write(mytemplate.render(encryption_key=key))
     for i in range(0, 3):
         local('gcloud compute scp encryption/encryption-config.yaml controller-{0}:~/'.format(i))
+
+# setup 07
+def setup_etcd():
+    for i in range(0, 3):
+        internal_ip = local(
+            "gcloud compute instances describe controller-{0} --format 'value(networkInterfaces[0].networkIP)'".format(i), capture=True)
+        mytemplate = Template(
+            filename='etcd/etcd.service.mako',
+            module_directory='/tmp/mako_modules')
+        with open('etcd/etcd.service.{0}'.format(i), 'w') as f:
+            f.write(mytemplate.render(internal_ip=internal_ip, name='controller-{0}'.format(i)))
+        local(
+            'gcloud compute scp etcd/etcd.service.{0} controller-{0}:~/etcd.service'.format(i))
+        local(
+            "gcloud compute ssh controller-{0} --command 'sudo cp ~/etcd.service /etc/systemd/system/etcd.service'".format(i))
+        
+
 
 def step_01():
     init_env()
