@@ -56,3 +56,87 @@ def create_workers():
     --scopes compute-rw,storage-ro,service-management,service-control,logging-write,monitoring \
     --subnet kubernetes \
     --tags kubernetes-the-hard-way,worker'.format(i))
+
+def generate_ca():
+    with lcd('ca'):
+        local('cfssl gencert -initca ca-csr.json | cfssljson -bare ca')
+
+def generate_admin_cert():
+    with lcd('admin'):
+        local('cfssl gencert -ca=../ca/ca.pem -ca-key=../ca/ca-key.pem -config=../ca/ca-config.json -profile=kubernetes admin-csr.json | cfssljson -bare admin')
+
+def generate_kubelet_cert():
+    with lcd('kubelet'):
+        for i in range(0,3):
+            ex_output = local("gcloud compute instances describe worker-{0} --format 'value(networkInterfaces[0].accessConfigs[0].natIP)'".format(i), capture=True)
+            in_output = local("gcloud compute instances describe worker-{0} --format 'value(networkInterfaces[0].networkIP)'".format(i), capture=True)
+            print (ex_output, in_output)
+            local('cfssl gencert -ca=../ca/ca.pem -ca-key=../ca/ca-key.pem -config=../ca/ca-config.json \
+  -hostname=worker-{0},{1},{2} \
+  -profile=kubernetes \
+  worker-{0}-csr.json | cfssljson -bare worker-{0}'.format(i, ex_output, in_output))
+
+def generate_control_manager_cert():
+    with lcd('control_manager'):
+        local('cfssl gencert \
+  -ca=../ca/ca.pem \
+  -ca-key=../ca/ca-key.pem \
+  -config=../ca/ca-config.json \
+  -profile=kubernetes \
+  kube-controller-manager-csr.json | cfssljson -bare kube-controller-manager')
+
+
+def generate_kube_proxy_cert():
+    with lcd('kube_proxy'):
+        local('cfssl gencert \
+  -ca=../ca/ca.pem \
+  -ca-key=../ca/ca-key.pem \
+  -config=../ca/ca-config.json \
+  -profile=kubernetes \
+  kube-proxy-csr.json | cfssljson -bare kube-proxy')
+
+
+def generate_scheduler_cert():
+    with lcd('scheduler'):
+        local('cfssl gencert \
+  -ca=../ca/ca.pem \
+  -ca-key=../ca/ca-key.pem \
+  -config=../ca/ca-config.json \
+  -profile=kubernetes \
+  kube-scheduler-csr.json | cfssljson -bare kube-scheduler')
+
+def generate_api_server_cert():
+    with lcd('api_server'):
+        public_ip = local("""gcloud compute addresses describe kubernetes-the-hard-way """
+                    """--region us-west1 --format 'value(address)'""", capture=True)
+        local("""cfssl gencert -ca=../ca/ca.pem -ca-key=../ca/ca-key.pem -config=../ca/ca-config.json """
+            """-hostname=10.32.0.1,10.240.0.10,10.240.0.11,10.240.0.12,{0},127.0.0.1,kubernetes.default """
+            """-profile=kubernetes kubernetes-csr.json | cfssljson -bare kubernetes""".format(public_ip))
+
+def generate_service_account_cert():
+    with lcd('sa'):
+        local("""cfssl gencert -ca=../ca/ca.pem -ca-key=../ca/ca-key.pem -config=../ca/ca-config.json """
+            """-profile=kubernetes service-account-csr.json | cfssljson -bare service-account""")
+
+
+def step_01():
+    init_env()
+    cfssl()
+    kubectl()
+
+def step_02():
+    networking()
+    firewall_rules()
+    public_ip()
+    create_controllers()
+    create_workers()
+
+def step_03():
+    generate_ca()
+    generate_admin_cert()
+    generate_kubelet_cert()
+    generate_kube_proxy_cert()
+    generate_scheduler_cert()
+    generate_api_server_cert()
+    generate_control_manager_cert()
+    generate_service_account_cert()
