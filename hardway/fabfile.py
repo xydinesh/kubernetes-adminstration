@@ -186,6 +186,9 @@ def setup_encryption():
         local('gcloud compute scp encryption/encryption-config.yaml controller-{0}:~/'.format(i))
 
 # setup 07
+def run_command(host, command):
+    local("gcloud compute ssh {0} --command '{1}'".format(host, command))
+
 def setup_etcd():
     for i in range(0, 3):
         internal_ip = local(
@@ -195,12 +198,35 @@ def setup_etcd():
             module_directory='/tmp/mako_modules')
         with open('etcd/etcd.service.{0}'.format(i), 'w') as f:
             f.write(mytemplate.render(internal_ip=internal_ip, name='controller-{0}'.format(i)))
+        host_name = "controller-{0}".format(i)
         local(
             'gcloud compute scp etcd/etcd.service.{0} controller-{0}:~/etcd.service'.format(i))
         local(
             "gcloud compute ssh controller-{0} --command 'sudo cp ~/etcd.service /etc/systemd/system/etcd.service'".format(i))
-        
+        run_command(
+            host=host_name, 
+            command='wget -q --show-progress --https-only --timestamping "https://github.com/coreos/etcd/releases/download/v3.3.5/etcd-v3.3.5-linux-amd64.tar.gz"')
+        run_command(
+            host=host_name, 
+            command="tar -xvf etcd-v3.3.5-linux-amd64.tar.gz && sudo mv etcd-v3.3.5-linux-amd64/etcd* /usr/local/bin/")
+        run_command(
+            host=host_name,
+            command="sudo mkdir -p /etc/etcd /var/lib/etcd")
+        run_command(
+            host=host_name,
+            command="sudo cp ca.pem kubernetes-key.pem kubernetes.pem /etc/etcd/")
+        run_command(
+            host=host_name,
+            command="sudo systemctl daemon-reload && sudo systemctl enable etcd && sudo systemctl start etcd")
 
+def verify_etcd():
+    run_command(
+        host="controller-0",
+        command="sudo ETCDCTL_API=3 etcdctl member list \
+  --endpoints=https://127.0.0.1:2379 \
+  --cacert=/etc/etcd/ca.pem \
+  --cert=/etc/etcd/kubernetes.pem \
+  --key=/etc/etcd/kubernetes-key.pem")
 
 def step_01():
     init_env()
