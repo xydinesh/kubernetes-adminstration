@@ -1,3 +1,5 @@
+import os
+import binascii
 from fabric.api import local, lcd
 from mako.template import Template
 
@@ -174,12 +176,10 @@ def create_config(name, dir_name, server_ip):
         local("""kubectl config use-context default --kubeconfig={0}.kubeconfig""".format(name))
 
 def setup_encryption():
-    import os
-    import binascii
     mytemplate = Template(
         filename='encryption/encryption-config.mako',
         module_directory='/tmp/mako_modules')
-    key = str(binascii.b2a_base64(os.urandom(20)), 'utf-8')
+    key = str(binascii.b2a_base64(os.urandom(32)), 'utf-8')
     with open('encryption/encryption-config.yaml', 'w') as f:
         f.write(mytemplate.render(encryption_key=key))
     for i in range(0, 3):
@@ -187,6 +187,9 @@ def setup_encryption():
 
 # setup 07
 def run_command(host, command):
+    """
+    Utility function to run commads in remote host
+    """
     local("gcloud compute ssh {0} --command '{1}'".format(host, command))
 
 def setup_etcd():
@@ -222,11 +225,139 @@ def setup_etcd():
 def verify_etcd():
     run_command(
         host="controller-0",
-        command="sudo ETCDCTL_API=3 etcdctl member list \
-  --endpoints=https://127.0.0.1:2379 \
-  --cacert=/etc/etcd/ca.pem \
-  --cert=/etc/etcd/kubernetes.pem \
-  --key=/etc/etcd/kubernetes-key.pem")
+        command="sudo ETCDCTL_API=3 etcdctl member list --endpoints=https://127.0.0.1:2379 --cacert=/etc/etcd/ca.pem \
+  --cert=/etc/etcd/kubernetes.pem --key=/etc/etcd/kubernetes-key.pem")
+
+def setup_controller():
+    for i in range(0, 3):
+        host_name = "controller-{0}".format(i)
+        run_command(
+            host=host_name,
+            command="sudo mkdir -p /etc/kubernetes/config")
+        run_command(
+            host=host_name,
+            command='wget -q --show-progress --https-only --timestamping \
+  "https://storage.googleapis.com/kubernetes-release/release/v1.10.2/bin/linux/amd64/kube-apiserver" \
+  "https://storage.googleapis.com/kubernetes-release/release/v1.10.2/bin/linux/amd64/kube-controller-manager" \
+  "https://storage.googleapis.com/kubernetes-release/release/v1.10.2/bin/linux/amd64/kube-scheduler" \
+  "https://storage.googleapis.com/kubernetes-release/release/v1.10.2/bin/linux/amd64/kubectl"')
+        # run_command(
+        #     host=host_name,
+        #     command='chmod +x kube-apiserver kube-controller-manager kube-scheduler kubectl && sudo cp kube-apiserver kube-controller-manager kube-scheduler kubectl /usr/local/bin/'
+        # )
+        run_command(
+            host=host_name,
+            command='sudo mkdir -p /var/lib/kubernetes/')
+        run_command(
+            host=host_name,
+            command='sudo cp ca.pem ca-key.pem kubernetes-key.pem kubernetes.pem service-account-key.pem service-account.pem encryption-config.yaml /var/lib/kubernetes/')
+
+def copy_file(host, src, destination):
+    """
+    Utility function to copy files to remote instance
+    """
+    tmp_file = str(binascii.b2a_hex(os.urandom(10)), 'utf-8')
+    local(
+        'gcloud compute scp {0} {1}:~/{2}'.format(src, host, tmp_file))
+    local(
+        "gcloud compute ssh {0} --command 'sudo cp ~/{1} {2}'".format(host, tmp_file, destination))
+    local(
+        "gcloud compute ssh {0} --command 'sudo rm ~/{1}'".format(host, tmp_file))
+
+def setup_api_server():
+    for i in range(0, 3):
+        internal_ip = local(
+            "gcloud compute instances describe controller-{0} --format 'value(networkInterfaces[0].networkIP)'".format(i), capture=True)
+        host_name = "controller-{0}".format(i)
+        mytemplate = Template(
+            filename='templates/kube-apiserver.service.mako',
+            module_directory='/tmp/mako_modules')
+        with open('api_server/kube-apiserver.service.{0}'.format(i), 'w') as f:
+            f.write(mytemplate.render(internal_ip=internal_ip))
+        copy_file(
+            host=host_name, 
+            src='api_server/kube-apiserver.service.{0}'.format(i), 
+            destination='/etc/systemd/system/kube-apiserver.service')
+        run_command(
+            host=host_name,
+            command="sudo systemctl daemon-reload && sudo systemctl enable kube-apiserver && sudo systemctl start kube-apiserver")
+
+def setup_controller_manager():
+    for i in range(0, 3):
+        host_name = "controller-{0}".format(i)
+        run_command(
+            host=host_name,
+            command='sudo cp kube-controller-manager.kubeconfig /var/lib/kubernetes/')
+        copy_file(
+            host=host_name,
+            src='control_manager/kube-controller-manager.service',
+            destination='/etc/systemd/system/kube-controller-manager.service')
+        run_command(
+            host=host_name,
+            command="sudo systemctl daemon-reload && sudo systemctl enable kube-controller-manager && sudo systemctl start kube-controller-manager")
+                                      
+def setup_scheduler():
+    for i in range(0, 3):
+        host_name = "controller-{0}".format(i)
+        run_command(
+            host=host_name,
+            command='sudo cp kube-scheduler.kubeconfig /var/lib/kubernetes/')
+        copy_file(
+            host=host_name,
+            src='scheduler/kube-scheduler.yaml',
+            destination='/etc/kubernetes/config/kube-scheduler.yaml')
+        copy_file(
+            host=host_name,
+            src='scheduler/kube-scheduler.service',
+            destination='/etc/systemd/system/kube-scheduler.service')
+        run_command(
+            host=host_name,
+            command="sudo systemctl daemon-reload && sudo systemctl enable kube-scheduler && sudo systemctl start kube-scheduler")
+
+def setup_nginx():
+     for i in range(0, 3):
+        host_name = "controller-{0}".format(i)
+        run_command(
+            host=host_name,
+            command='sudo apt-get install -y nginx')
+        copy_file(
+            host=host_name,
+            src='nginx/kubernetes.default.svc.cluster.local',
+            destination='/etc/nginx/sites-available/kubernetes.default.svc.cluster.local')
+        run_command(
+            host=host_name,
+            command='sudo rm -f /etc/nginx/sites-enabled/kubernetes.default.svc.cluster.local')
+        run_command(
+             host=host_name,
+             command='sudo ln -s /etc/nginx/sites-available/kubernetes.default.svc.cluster.local /etc/nginx/sites-enabled/')
+        run_command(
+            host=host_name,
+            command='sudo systemctl restart nginx')
+        run_command(
+            host=host_name,
+            command='systemctl enable nginx')
+        
+def setup_rbac():
+    host_name = "controller-0"
+    copy_file(
+        host=host_name,
+        src='admin/rbac-authorization.yaml',
+        destination='/etc/rbac-authorization.yaml')
+    run_command(
+        host=host_name,
+        command='kubectl apply --kubeconfig admin.kubeconfig -f /etc/rbac-authorization.yaml')
+
+def setup_lb():
+    public_ip = local("""gcloud compute addresses describe kubernetes-the-hard-way """
+                      """--region us-west1 --format 'value(address)'""", capture=True)
+    local("""gcloud compute http-health-checks create kubernetes --description \"Kubernetes Health Check\" """
+        """--host \"kubernetes.default.svc.cluster.local\" --request-path \"/healthz\" """)
+    local("""gcloud compute firewall-rules create kubernetes-the-hard-way-allow-health-check """
+        """--network kubernetes-the-hard-way --source-ranges 209.85.152.0/22,209.85.204.0/22,35.191.0.0/16 --allow tcp""")
+    local("""gcloud compute target-pools create kubernetes-target-pool --http-health-check kubernetes""")
+    local("""gcloud compute target-pools add-instances kubernetes-target-pool --instances controller-0,controller-1,controller-2""")
+    local("""gcloud compute forwarding-rules create kubernetes-forwarding-rule --address {0} --ports 6443 """
+        """--region $(gcloud config get-value compute/region) --target-pool kubernetes-target-pool""".format(public_ip))
 
 def step_01():
     init_env()
@@ -264,3 +395,16 @@ def step_04():
 
 def step_05():
     setup_encryption()
+
+def step_06():
+    setup_etcd()
+    verify_etcd()
+
+def step_07():
+    setup_controller()
+    setup_api_server()
+    setup_controller_manager()
+    setup_scheduler()
+    setup_nginx()
+    setup_rbac()
+    setup_lb()
