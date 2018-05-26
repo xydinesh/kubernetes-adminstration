@@ -359,6 +359,80 @@ def setup_lb():
     local("""gcloud compute forwarding-rules create kubernetes-forwarding-rule --address {0} --ports 6443 """
         """--region $(gcloud config get-value compute/region) --target-pool kubernetes-target-pool""".format(public_ip))
 
+### worker node setup ###
+def setup_worker():
+    for i in range(0, 3):
+        host_name = "worker-{0}".format(i)
+        run_command(
+            host=host_name,
+            command='sudo apt-get update && sudo apt-get -y install socat conntrack ipset')
+        run_command(
+            host=host_name,
+            command="""wget -q --show-progress --https-only --timestamping """
+                """https://github.com/kubernetes-incubator/cri-tools/releases/download/v1.0.0-beta.0/crictl-v1.0.0-beta.0-linux-amd64.tar.gz """
+                """https://storage.googleapis.com/kubernetes-the-hard-way/runsc """
+                """https://github.com/opencontainers/runc/releases/download/v1.0.0-rc5/runc.amd64 """
+                """https://github.com/containernetworking/plugins/releases/download/v0.6.0/cni-plugins-amd64-v0.6.0.tgz """
+                """https://github.com/containerd/containerd/releases/download/v1.1.0/containerd-1.1.0.linux-amd64.tar.gz """
+                """https://storage.googleapis.com/kubernetes-release/release/v1.10.2/bin/linux/amd64/kubectl """
+                """https://storage.googleapis.com/kubernetes-release/release/v1.10.2/bin/linux/amd64/kube-proxy """
+                """https://storage.googleapis.com/kubernetes-release/release/v1.10.2/bin/linux/amd64/kubelet """)
+        run_command(
+            host=host_name,
+            command="""sudo mkdir -p /etc/cni/net.d /opt/cni/bin /var/lib/kubelet """
+                """/var/lib/kube-proxy /var/lib/kubernetes /var/run/kubernetes"""
+        )
+        run_command(
+            host=host_name,
+            command='chmod +x kubectl kube-proxy kubelet runc.amd64 runsc'
+        )
+        run_command(
+            host=host_name,
+            command='sudo cp runc.amd64 runc'
+        )
+        run_command(
+            host=host_name,
+            command=' sudo cp kubectl kube-proxy kubelet runc runsc /usr/local/bin/'
+        )
+        run_command(
+            host=host_name,
+            command='sudo tar -xvf crictl-v1.0.0-beta.0-linux-amd64.tar.gz -C /usr/local/bin/'
+        )
+        run_command(
+            host=host_name,
+            command='sudo tar -xvf cni-plugins-amd64-v0.6.0.tgz -C /opt/cni/bin/'
+        )
+        run_command(
+            host=host_name,
+            command='sudo tar -xvf containerd-1.1.0.linux-amd64.tar.gz -C /'
+        )
+
+def setup_cni():
+    for i in range(0, 3):
+        host_name = "worker-{0}".format(i)
+        pod_cidr = '10.200.{0}.0/24'.format(i)
+        mytemplate = Template(
+            filename='templates/10-bridge.conf.mako',
+            module_directory='/tmp/mako_modules')
+        with open('cni/10-bridge.conf.{0}'.format(i), 'w') as f:
+            f.write(mytemplate.render(pod_cidr=pod_cidr))
+        copy_file(
+            host=host_name,
+            src='cni/10-bridge.conf.{0}'.format(i),
+            destination='/etc/cni/net.d/10-bridge.conf'
+        )
+        copy_file(
+            host=host_name,
+            src='cni/99-loopback.conf',
+            destination='/etc/cni/net.d/99-loopback.conf'
+        )
+
+def setup_containerd():
+    for i in range(0, 3):
+        host_name = "worker-{0}".format(i)
+        
+##### defining steps for the process ###########################################
+
 def step_01():
     init_env()
     cfssl()
