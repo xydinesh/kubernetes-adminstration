@@ -430,7 +430,47 @@ def setup_cni():
 def setup_containerd():
     for i in range(0, 3):
         host_name = "worker-{0}".format(i)
-        
+        run_command(
+            host=host_name,
+            command='sudo mkdir -p /etc/containerd/'
+        )
+        copy_file(
+            host=host_name,
+            src='containerd/config.toml',
+            destination='/etc/containerd/config.toml'
+        )
+        copy_file(
+            host=host_name,
+            src='containerd/containerd.service',
+            destination='/etc/systemd/system/containerd.service'
+        )
+
+def setup_kubelet():
+    for i in range(0, 3):
+        host_name = "worker-{0}".format(i)
+        pod_cidr = '10.200.{0}.0/24'.format(i)
+        """
+        sudo mv ${HOSTNAME}-key.pem ${HOSTNAME}.pem /var/lib/kubelet/
+        sudo mv ${HOSTNAME}.kubeconfig /var/lib/kubelet/kubeconfig
+        sudo mv ca.pem /var/lib/kubernetes/
+        """
+        run_command(
+            host=host_name,
+            command='sudo cp {0}-key.pem {0}.pem /var/lib/kubelet/'.format(host_name)
+        )
+        run_command(
+            host=host_name,
+            command='sudo cp {0}.kubeconfig /var/lib/kubelet/kubeconfig'.format(host_name)
+        )
+        run_command(
+            host=host_name,
+            command='sudo cp ca.pem /var/lib/kubernetes/'
+        )
+        mytemplate = Template(
+            filename='templates/kubelet-config.yaml.mako',
+            module_directory='/tmp/mako_modules')
+        with open('kubelet/kubelet-config.yaml.{0}'.format(i), 'w') as f:
+            f.write(mytemplate.render(pod_cidr=pod_cidr, host_name=host_name))
 ##### defining steps for the process ###########################################
 
 def step_01():
