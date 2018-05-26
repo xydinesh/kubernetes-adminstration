@@ -444,6 +444,9 @@ def setup_containerd():
             src='containerd/containerd.service',
             destination='/etc/systemd/system/containerd.service'
         )
+        run_command(
+            host=host_name,
+            command="sudo systemctl daemon-reload && sudo systemctl enable containerd && sudo systemctl start containerd")
 
 def setup_kubelet():
     for i in range(0, 3):
@@ -481,10 +484,30 @@ def setup_kubelet():
             src='kubelet/kubelet.service',
             destination='/etc/systemd/system/kubelet.service'
         )
+        run_command(
+            host=host_name,
+            command="sudo systemctl daemon-reload && sudo systemctl enable kubelet && sudo systemctl start kubelet")
 
 def setup_kube_proxy():
     for i in range(0, 3):
         host_name = "worker-{0}".format(i)
+        run_command(
+            host=host_name,
+            command='sudo cp kube-proxy.kubeconfig /var/lib/kube-proxy/kubeconfig'
+        )
+        copy_file(
+            host=host_name,
+            src='kube_proxy/kube-proxy-config.yaml',
+            destination='/var/lib/kube-proxy/kube-proxy-config.yaml'
+        )
+        copy_file(
+            host=host_name,
+            src='kube_proxy/kube-proxy.service',
+            destination='/etc/systemd/system/kube-proxy.service'
+        )
+        run_command(
+            host=host_name,
+            command="sudo systemctl daemon-reload && sudo systemctl enable kube-proxy && sudo systemctl start kube-proxy")
 ##### defining steps for the process ###########################################
 
 def step_01():
@@ -536,3 +559,10 @@ def step_07():
     setup_nginx()
     setup_rbac()
     setup_lb()
+
+def step_08():
+    setup_worker()
+    setup_cni()
+    setup_containerd()
+    setup_kubelet()
+    setup_kube_proxy()
