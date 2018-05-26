@@ -471,6 +471,20 @@ def setup_kubelet():
             module_directory='/tmp/mako_modules')
         with open('kubelet/kubelet-config.yaml.{0}'.format(i), 'w') as f:
             f.write(mytemplate.render(pod_cidr=pod_cidr, host_name=host_name))
+        copy_file(
+            host=host_name,
+            src='kubelet/kubelet-config.yaml.{0}'.format(i),
+            destination='/var/lib/kubelet/kubelet-config.yaml'
+        )
+        copy_file(
+            host=host_name,
+            src='kubelet/kubelet.service',
+            destination='/etc/systemd/system/kubelet.service'
+        )
+
+def setup_kube_proxy():
+    for i in range(0, 3):
+        host_name = "worker-{0}".format(i)
 ##### defining steps for the process ###########################################
 
 def step_01():
