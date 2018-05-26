@@ -1,6 +1,6 @@
 import os
 import binascii
-from fabric.api import local, lcd
+from fabric.api import local, lcd, settings
 from mako.template import Template
 
 def init_env(region='us-west1', zone='us-west1-c', os='osx'):
@@ -508,6 +508,63 @@ def setup_kube_proxy():
         run_command(
             host=host_name,
             command="sudo systemctl daemon-reload && sudo systemctl enable kube-proxy && sudo systemctl start kube-proxy")
+
+def setup_kubectl():
+    public_ip = local(
+        """gcloud compute addresses describe kubernetes-the-hard-way """
+        """--region us-west1 --format 'value(address)'""",
+        capture=True
+    )
+    local(
+        """kubectl config set-cluster kubernetes-the-hard-way --certificate-authority=ca/ca.pem """
+        """--embed-certs=true --server=https://{0}:6443""".format(public_ip)
+    )
+    local(
+        """kubectl config set-credentials admin --client-certificate=admin/admin.pem --client-key=admin/admin-key.pem"""
+    )
+    local(
+        """ kubectl config set-context kubernetes-the-hard-way --cluster=kubernetes-the-hard-way --user=admin"""
+    )
+    local('kubectl config use-context kubernetes-the-hard-way')
+    local('kubectl get componentstatuses')
+    local('kubectl get nodes')
+
+def setup_pod_routes():
+    for i in range(0,3):
+        local(
+            """gcloud compute routes create kubernetes-route-10-200-{0}-0-24 --network kubernetes-the-hard-way """
+            """--next-hop-address 10.240.0.2{0} --destination-range 10.200.{0}.0/24""".format(i))
+        local('gcloud compute routes list --filter "network: kubernetes-the-hard-way"')
+
+def setup_kube_dns():
+    local('kubectl create -f https://storage.googleapis.com/kubernetes-the-hard-way/kube-dns.yaml')
+
+def cleanup():
+    with settings(warn_only=True):
+        local("""gcloud -q compute instances delete controller-0 controller-1 controller-2 """
+            """worker-0 worker-1 worker-2""")
+        # network
+        local(
+            """gcloud -q compute forwarding-rules delete kubernetes-forwarding-rule """
+            """--region $(gcloud config get-value compute/region)""")
+        local(
+            'gcloud -q compute target-pools delete kubernetes-target-pool'
+        )
+        local(
+            'gcloud -q compute http-health-checks delete kubernetes'
+        )
+        local(
+            'gcloud -q compute addresses delete kubernetes-the-hard-way'
+        )
+        # firewall
+        local("""gcloud -q compute firewall-rules delete kubernetes-the-hard-way-allow-nginx-service """
+            """kubernetes-the-hard-way-allow-internal kubernetes-the-hard-way-allow-external """
+            """kubernetes-the-hard-way-allow-health-check""")
+        # VPC
+        local("""gcloud -q compute routes delete kubernetes-route-10-200-0-0-24 kubernetes-route-10-200-1-0-24 """
+            """kubernetes-route-10-200-2-0-24""")
+        local('gcloud -q compute networks subnets delete kubernetes')
+        local('gcloud -q compute networks delete kubernetes-the-hard-way')
 ##### defining steps for the process ###########################################
 
 def step_01():
