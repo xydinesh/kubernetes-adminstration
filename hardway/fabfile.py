@@ -177,7 +177,7 @@ def create_config(name, dir_name, server_ip):
 
 def setup_encryption():
     mytemplate = Template(
-        filename='encryption/encryption-config.mako',
+        filename='templates/encryption-config.mako',
         module_directory='/tmp/mako_modules')
     key = str(binascii.b2a_base64(os.urandom(32)), 'utf-8')
     with open('encryption/encryption-config.yaml', 'w') as f:
